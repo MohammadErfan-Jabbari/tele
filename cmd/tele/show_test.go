@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"math"
 	"os"
 	"reflect"
 	"strings"
@@ -415,4 +416,27 @@ func TestShowJSON_RichMetadataEntitiesReactionsForwardAndEdit(t *testing.T) {
 	if strings.Contains(lines[1], "forwarded_from") {
 		t.Fatalf("hidden forward sender should omit forwarded_from: %s", lines[1])
 	}
+
+	// Overflow, negative offset, split surrogate pair, and gift link in forwarded_from must never panic or leak.
+	overflow := []domain.Message{
+		{
+			ID:      603,
+			Date:    at(25, 9, 17),
+			Text:    "👋 hi",
+			Forward: &domain.ForwardInfo{From: "Claim https://t.me/giftcode/Leak99"},
+			Entities: []domain.MessageEntity{
+				{Type: "url", Offset: 1, Length: math.MaxInt},
+				{Type: "url", Offset: -5, Length: 4},
+				{Type: "text_url", Offset: 1, Length: 1, URL: "https://example.org"},
+			},
+		},
+	}
+	var overflowOut bytes.Buffer
+	if err := showJSON(&overflowOut, overflow, me); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(overflowOut.String(), "Leak99") {
+		t.Fatalf("leaked gift link in forwarded_from: %s", overflowOut.String())
+	}
+	assertSays(t, overflowOut.String(), `[REDACTED_GIFT_LINK]`, `"url":"https://example.org"`)
 }

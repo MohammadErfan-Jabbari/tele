@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -43,7 +44,7 @@ func newDraftCmd(o *options) *cobra.Command {
 			if readonly.Active() {
 				return &exitCode{code: commandsOffCode, msg: "Not allowed: TELE_READ_ONLY is enabled in the process environment."}
 			}
-			text, err := composeText(args[1:], cmd.InOrStdin())
+			text, err := composeDraftText(args[1:], cmd.InOrStdin())
 			if err != nil {
 				return err
 			}
@@ -109,4 +110,20 @@ func saveDraft(ctx context.Context, acc accountSurface, out io.Writer, chat, tex
 	}
 	_, err = fmt.Fprintln(out, "draft saved")
 	return err
+}
+
+func composeDraftText(args []string, in io.Reader) (string, error) {
+	text := strings.Join(args, " ")
+	if len(args) == 0 {
+		raw, err := io.ReadAll(in)
+		if err != nil {
+			return "", fmt.Errorf("reading the draft from stdin: %w", err)
+		}
+		text = string(raw)
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", &exitCode{code: usageCode, msg: "There is nothing to save: give the draft text, or pipe it in."}
+	}
+	return text, nil
 }

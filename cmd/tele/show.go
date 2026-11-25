@@ -272,7 +272,7 @@ func messageOf(m domain.Message, me project.LoggedInUser) messageJSON {
 	}
 	if m.Forward != nil {
 		j.Forwarded = true
-		j.ForwardedFrom = sanitize.Name(m.Forward.From)
+		j.ForwardedFrom = sanitize.MessageText(m.SenderID, sanitize.Name(m.Forward.From))
 	}
 	if links := linksOf(m); len(links) > 0 {
 		j.Links = links
@@ -334,6 +334,6 @@ func sliceUTF16(units []uint16, offset, length int) string {
 	if offset < 0 || length <= 0 || offset >= len(units) {
 		return ""
 	}
-	end := min(offset+length, len(units))
+	end := offset + min(length, len(units)-offset)
 	return string(utf16.Decode(units[offset:end]))
 }

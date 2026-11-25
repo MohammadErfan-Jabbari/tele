@@ -130,6 +130,7 @@ func TestUsage_AMistakeExitsTwo(t *testing.T) {
 		{"media", "save", "@bob", "10", "--dir", "/tmp", "--slot", "bogus"},
 		{"media", "save", "@bob", "10", "--dir", "/tmp", "--timeout", "0"},
 		{"draft", "set"},
+		{"draft", "set", "@bob"},
 		{"draft", "set", "Bob", "hi"},
 		{"draft", "clear"},
 		{"draft", "clear", "Bob"},

@@ -515,6 +515,69 @@ func TestCreateUniqueFile_EmptyNameFallsBack(t *testing.T) {
 	require.NoError(t, f.Close())
 }
 
+func TestSavedFileNameAndCreateUniqueFile_SanitizeControlAndDotDot(t *testing.T) {
+	r := mediaRef{
+		slot: domain.DocFull,
+		doc:  domain.DocumentRef{ID: 7, FileName: "\x1b[31mreport\u202e\n.pdf", MimeType: "application/pdf"},
+		kind: domain.MediaFile,
+	}
+	got := savedFileName(r)
+	assert.NotContains(t, got, "\x1b")
+	assert.NotContains(t, got, "\u202e")
+	assert.NotContains(t, got, "\n")
+	assert.Equal(t, "report .pdf", got)
+
+	dir := t.TempDir()
+	f, err := createUniqueFile(dir, "..")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(dir, "file"), f.Name())
+	require.NoError(t, f.Close())
+}
+
+func TestSaveMedia_NonDialogAddressChatFetchesMessageAndHandlesStaleRef(t *testing.T) {
+	c := &mediaStub{
+		payload:        "channel-file",
+		staleUntilCall: 1,
+		refreshed: domain.Message{
+			ID:       77,
+			ChatID:   900,
+			Document: &domain.DocumentRef{ID: 33, FileName: "\x1b[31mnotes\u202e.txt", MimeType: "text/plain", Size: 12},
+			Media:    &domain.MediaRef{Kind: domain.MediaFile},
+		},
+	}
+	o, _ := newMediaOwner(t, c)
+	o.state.RememberAddress(domain.Peer{Type: domain.PeerChannel, ID: 900, AccessHash: 12345})
+
+	dir := t.TempDir()
+	saved, err := testClient(o).SaveMedia(context.Background(), 900, 77, domain.DocFull, dir, "")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(dir, "notes.txt"), saved)
+	raw, err := os.ReadFile(saved)
+	require.NoError(t, err)
+	assert.Equal(t, "channel-file", string(raw))
+}
+
+func TestSaveMedia_EvictedMessageInHeldChatFallsBackToRefreshMessage(t *testing.T) {
+	c := &mediaStub{
+		payload: "older-photo",
+		refreshed: domain.Message{
+			ID:     999,
+			ChatID: 1,
+			Photo:  &domain.PhotoRef{ID: 555, ThumbSize: "x"},
+			Media:  &domain.MediaRef{Kind: domain.MediaPhoto},
+		},
+	}
+	o, _ := newMediaOwner(t, c)
+
+	dir := t.TempDir()
+	saved, err := testClient(o).SaveMedia(context.Background(), 1, 999, domain.PhotoFull, dir, "")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(dir, "photo_555.jpg"), saved)
+	raw, err := os.ReadFile(saved)
+	require.NoError(t, err)
+	assert.Equal(t, "older-photo", string(raw))
+}
+
 func TestExtFromMime(t *testing.T) {
 	cases := []struct {
 		mime string

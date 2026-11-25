@@ -127,6 +127,21 @@ func TestMediaSave_RejectsEscapedPathAndMissingMediaAndForumWithoutTopic(t *test
 		t.Fatalf("escaped path: got %v, want escape error", err)
 	}
 
+	// Symlink inside --dir pointing outside --dir is also refused via canonical containment.
+	outsideFile := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outsideFile, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	linkPath := filepath.Join(dir, "link.txt")
+	if err := os.Symlink(outsideFile, linkPath); err != nil {
+		t.Fatal(err)
+	}
+	acc.savePath = linkPath
+	err = saveMedia(shortCtx(t), acc, &bytes.Buffer{}, "42", 11, mediaSaveQuery{dir: dir})
+	if err == nil || !strings.Contains(err.Error(), "escaped") {
+		t.Fatalf("symlink escape: got %v, want escape error", err)
+	}
+
 	// Missing media slot from host exits 5.
 	acc.savePath = ""
 	acc.saveErr = &telerr.Error{Kind: telerr.NotFound, Op: "SaveMedia"}

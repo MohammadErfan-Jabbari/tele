@@ -34,7 +34,7 @@ type mediaSavedJSON struct {
 	MessageID int    `json:"message_id"`
 	Slot      string `json:"slot"`
 	Path      string `json:"path"`
-	Size      int64  `json:"size,omitempty"`
+	Size      int64  `json:"size"`
 }
 
 // newMediaCmd is `tele media`: download media attachments to local files.
@@ -116,7 +116,10 @@ func saveMedia(ctx context.Context, acc accountSurface, out io.Writer, chat stri
 		return &exitCode{code: notFoundCode, msg: fmt.Sprintf("No message %d in %s.", msgID, title)}
 	}
 	if telerr.Of(err) == telerr.PeerNotFound || telerr.Of(err) == telerr.NotFound {
-		return &exitCode{code: notFoundCode, msg: fmt.Sprintf("No topic %d in %s.", q.topic, title)}
+		if q.topic != 0 {
+			return &exitCode{code: notFoundCode, msg: fmt.Sprintf("No topic %d in %s.", q.topic, title)}
+		}
+		return &exitCode{code: notFoundCode, msg: fmt.Sprintf("No message %d in %s.", msgID, title)}
 	}
 	if err != nil {
 		return err
@@ -158,16 +161,20 @@ func saveMedia(ctx context.Context, acc accountSurface, out io.Writer, chat stri
 	if err != nil {
 		return err
 	}
-	absSaved, err := filepath.Abs(savedPath)
+	canonDir, err := canonicalPath(absDir)
+	if err != nil {
+		return fmt.Errorf("resolving destination directory: %w", err)
+	}
+	canonSaved, err := canonicalPath(savedPath)
 	if err != nil {
 		return fmt.Errorf("resolving saved path: %w", err)
 	}
-	rel, err := filepath.Rel(absDir, absSaved)
+	rel, err := filepath.Rel(canonDir, canonSaved)
 	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("saved file path escaped destination directory")
 	}
 	var size int64
-	if info, statErr := os.Stat(absSaved); statErr == nil {
+	if info, statErr := os.Stat(canonSaved); statErr == nil {
 		size = info.Size()
 	}
 	if q.asJSON {
@@ -175,12 +182,38 @@ func saveMedia(ctx context.Context, acc accountSurface, out io.Writer, chat stri
 			ChatID:    row.ID,
 			MessageID: msgID,
 			Slot:      slot.String(),
-			Path:      absSaved,
+			Path:      canonSaved,
 			Size:      size,
 		})
 	}
-	_, err = fmt.Fprintln(out, absSaved)
+	_, err = fmt.Fprintln(out, canonSaved)
 	return err
+}
+
+// canonicalPath resolves symlinks on the longest existing prefix of p so path
+// containment holds across symlinked directories (such as /tmp -> /private/tmp)
+// and catches symlinks inside --dir that point outside it.
+func canonicalPath(p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err == nil {
+		return resolved, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", err
+	}
+	dir := filepath.Dir(abs)
+	if dir == abs {
+		return abs, nil
+	}
+	parent, err := canonicalPath(dir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(parent, filepath.Base(abs)), nil
 }
 
 func detectMediaSlot(m domain.Message) (domain.MediaSlot, bool) {
