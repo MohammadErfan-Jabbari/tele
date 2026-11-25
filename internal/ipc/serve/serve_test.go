@@ -348,3 +348,28 @@ func TestAHostRefusesASubscriptionIDThatDoesNotGrow(t *testing.T) {
 
 	c.refused(t)
 }
+
+func TestTeleReadOnlyEnvClampsCommandsAllAndRefusesRestartUninstall(t *testing.T) {
+	t.Setenv("TELE_READ_ONLY", "1")
+	command := serveAs(t, wire.KindCommand, wire.CommandsAll)
+
+	// A mutating account call is refused even though the host config says all.
+	markParams, err := protocol.Calls["MarkRead"].Params(domain.HistoryKey{ChatID: 1}, 5)
+	require.NoError(t, err)
+	require.NoError(t, command.enc.Encode(wire.Request(2, "MarkRead", markParams)))
+	f, err := command.dec.Decode()
+	require.NoError(t, err)
+	require.NotNil(t, f.Error)
+	assert.Equal(t, telerr.CommandsOff, f.Error.Kind)
+
+	// $restart and $uninstall are also refused from KindCommand under TELE_READ_ONLY=1.
+	f = command.ask(t, 3, wire.MethodRestart)
+	var restart wire.RestartResult
+	require.NoError(t, json.Unmarshal(f.Result, &restart))
+	assert.NotEmpty(t, restart.Refused)
+
+	f = command.ask(t, 4, wire.MethodUninstall)
+	var uninstall wire.UninstallResult
+	require.NoError(t, json.Unmarshal(f.Result, &uninstall))
+	assert.NotEmpty(t, uninstall.Refused)
+}

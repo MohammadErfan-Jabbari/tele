@@ -18,6 +18,7 @@ import (
 	"github.com/sorokin-vladimir/tele/internal/ipc/protocol"
 	"github.com/sorokin-vladimir/tele/internal/ipc/wire"
 	"github.com/sorokin-vladimir/tele/internal/priority"
+	"github.com/sorokin-vladimir/tele/internal/readonly"
 	"github.com/sorokin-vladimir/tele/internal/telerr"
 )
 
@@ -251,7 +252,11 @@ func (c *served) request(ctx context.Context, f wire.Frame, running *sync.WaitGr
 		}))
 		return nil
 	}
-	if access := c.host.AccountCommands(); c.kind == wire.KindCommand && !commandMay(access, f.Method) {
+	access := c.host.AccountCommands()
+	if readonly.Active() && access == wire.CommandsAll {
+		access = wire.CommandsRead
+	}
+	if c.kind == wire.KindCommand && !commandMay(access, f.Method) {
 		err := &telerr.Error{
 			Kind: telerr.CommandsOff, Op: f.Method,
 			Detail: fmt.Sprintf("cli.account_commands is %s for the tele holding the account", access),
@@ -334,6 +339,14 @@ func (c *served) hostCall(f wire.Frame) (answer any, then func(), ok bool, err e
 			return wire.SetResult{Refused: commandsDoNotSet}, nil, true, nil
 		case wire.MethodReload:
 			return wire.ReloadResult{Failed: commandsDoNotSet}, nil, true, nil
+		case wire.MethodRestart:
+			if readonly.Active() {
+				return wire.RestartResult{Refused: commandsDoNotSet}, nil, true, nil
+			}
+		case wire.MethodUninstall:
+			if readonly.Active() {
+				return wire.UninstallResult{Refused: commandsDoNotSet}, nil, true, nil
+			}
 		}
 	}
 	switch f.Method {

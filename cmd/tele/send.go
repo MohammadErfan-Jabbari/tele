@@ -13,6 +13,7 @@ import (
 	"github.com/sorokin-vladimir/tele/internal/core"
 	"github.com/sorokin-vladimir/tele/internal/domain"
 	"github.com/sorokin-vladimir/tele/internal/markup"
+	"github.com/sorokin-vladimir/tele/internal/readonly"
 	"github.com/sorokin-vladimir/tele/internal/telerr"
 )
 
@@ -47,6 +48,9 @@ func newSendCmd(o *options) *cobra.Command {
 			text, err := composeText(args[1:], cmd.InOrStdin())
 			if err != nil {
 				return err
+			}
+			if readonly.Active() {
+				return &exitCode{code: commandsOffCode, msg: "Not allowed: TELE_READ_ONLY is enabled in the process environment."}
 			}
 			within := readyTimeout
 			if !q.noWait {

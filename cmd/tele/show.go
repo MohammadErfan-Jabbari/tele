@@ -14,6 +14,8 @@ import (
 	"github.com/sorokin-vladimir/tele/internal/core"
 	"github.com/sorokin-vladimir/tele/internal/core/project"
 	"github.com/sorokin-vladimir/tele/internal/domain"
+	"github.com/sorokin-vladimir/tele/internal/readonly"
+	"github.com/sorokin-vladimir/tele/internal/sanitize"
 	"github.com/sorokin-vladimir/tele/internal/telerr"
 )
 
@@ -44,6 +46,9 @@ func newShowCmd(o *options) *cobra.Command {
 				return &exitCode{code: usageCode, msg: "--around takes a message id."}
 			case q.around != 0 && q.before != 0:
 				return &exitCode{code: usageCode, msg: "--around and --before do not go together."}
+			}
+			if q.markRead && readonly.Active() {
+				return &exitCode{code: commandsOffCode, msg: "Not allowed: TELE_READ_ONLY is enabled in the process environment."}
 			}
 			return askAccount(cmd.Context(), *o, readyTimeout, func(ctx context.Context, a heldAccount) error {
 				return showMessages(ctx, a, cmd.OutOrStdout(), args[0], q)
@@ -149,7 +154,7 @@ func showText(msgs []domain.Message, me project.LoggedInUser, nameWidth int, loc
 
 // shownName is who sent m as a line names them, cut to width columns.
 func shownName(m domain.Message, width int) string {
-	name := m.SenderName
+	name := sanitize.Name(m.SenderName)
 	switch {
 	case m.IsOut:
 		name = "You"
@@ -172,14 +177,15 @@ func quote(id int, byID map[int]domain.Message, nameWidth int) string {
 
 // body is what a message says: its media named, then its text.
 func body(m domain.Message) string {
+	text := sanitize.MessageText(m.SenderID, m.Text)
 	if m.Media == nil {
-		return m.Text
+		return text
 	}
-	label := "[" + m.Media.Label() + "]"
-	if m.Text == "" {
+	label := "[" + sanitize.Name(m.Media.Label()) + "]"
+	if text == "" {
 		return label
 	}
-	return label + " " + m.Text
+	return label + " " + text
 }
 
 // messageJSON is a message as `tele show --json` prints it, a contract kept
@@ -235,16 +241,16 @@ func showJSON(out io.Writer, msgs []domain.Message, me project.LoggedInUser) err
 // messageOf is m as JSON prints it. Your own messages carry your id and name.
 func messageOf(m domain.Message, me project.LoggedInUser) messageJSON {
 	j := messageJSON{
-		ID: m.ID, Date: m.Date, SenderID: m.SenderID, Sender: m.SenderName,
-		Out: m.IsOut, Text: m.Text, ReplyTo: m.ReplyToMsgID,
+		ID: m.ID, Date: m.Date, SenderID: m.SenderID, Sender: sanitize.Name(m.SenderName),
+		Out: m.IsOut, Text: sanitize.MessageText(m.SenderID, m.Text), ReplyTo: m.ReplyToMsgID,
 	}
 	if m.IsOut {
-		j.SenderID, j.Sender = me.ID, me.Name
+		j.SenderID, j.Sender = me.ID, sanitize.Name(me.Name)
 	}
 	if r := m.Media; r != nil {
 		j.Media = &mediaJSON{
-			Kind: mediaKinds[r.Kind], Duration: r.Duration, FileName: r.FileName, Size: r.Size,
-			Title: r.Title, Performer: r.Performer, Emoji: r.Emoji,
+			Kind: mediaKinds[r.Kind], Duration: r.Duration, FileName: sanitize.Name(r.FileName), Size: r.Size,
+			Title: sanitize.Name(r.Title), Performer: sanitize.Name(r.Performer), Emoji: sanitize.Name(r.Emoji),
 		}
 	}
 	return j
