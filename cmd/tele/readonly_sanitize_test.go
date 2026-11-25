@@ -19,6 +19,9 @@ func TestCLI_TeleReadOnlyRefusesMutatingAndServiceCommandsBeforeDialing(t *testi
 		{"send", "me", "hello"},
 		{"send", "me"},
 		{"show", "me", "--mark-read"},
+		{"draft", "set", "me", "hello"},
+		{"draft", "set", "me"},
+		{"draft", "clear", "me"},
 		{"daemon", "install"},
 		{"daemon", "uninstall"},
 	} {

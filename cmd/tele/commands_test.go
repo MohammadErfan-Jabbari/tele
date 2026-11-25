@@ -123,6 +123,17 @@ func TestUsage_AMistakeExitsTwo(t *testing.T) {
 		{"send", "Bob", "hi"},
 		{"send", "@bob"},
 		{"send", "@bob", "hi", "--timeout", "0"},
+		{"media", "save"},
+		{"media", "save", "@bob", "notanid", "--dir", "/tmp"},
+		{"media", "save", "@bob", "0", "--dir", "/tmp"},
+		{"media", "save", "@bob", "10"},
+		{"media", "save", "@bob", "10", "--dir", "/tmp", "--slot", "bogus"},
+		{"media", "save", "@bob", "10", "--dir", "/tmp", "--timeout", "0"},
+		{"draft", "set"},
+		{"draft", "set", "@bob"},
+		{"draft", "set", "Bob", "hi"},
+		{"draft", "clear"},
+		{"draft", "clear", "Bob"},
 	} {
 		out, code := runBuilt(t, args...)
 		if code != usageCode {

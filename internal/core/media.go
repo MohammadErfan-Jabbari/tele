@@ -18,6 +18,7 @@ import (
 	"github.com/sorokin-vladimir/tele/internal/core/state"
 	"github.com/sorokin-vladimir/tele/internal/domain"
 	"github.com/sorokin-vladimir/tele/internal/mediacache"
+	"github.com/sorokin-vladimir/tele/internal/sanitize"
 	"github.com/sorokin-vladimir/tele/internal/telerr"
 	internaltg "github.com/sorokin-vladimir/tele/internal/tg"
 )
@@ -156,6 +157,38 @@ func (f *mediaFetcher) stream(ctx context.Context, r mediaRef, dst io.Writer) er
 	return f.client.DownloadDocumentToFile(ctx, r.doc, dst)
 }
 
+// peerFor resolves the peer for chatID from held dialogs or known addresses
+// (such as public channels or search hits with no local dialog).
+func (f *mediaFetcher) peerFor(chatID int64) (domain.Peer, bool) {
+	st := f.state.Store()
+	if chat, ok := st.GetChat(chatID); ok {
+		return chat.Peer, true
+	}
+	return st.Address(chatID)
+}
+
+// messageForSave loads (chatID, msgID) from the local store, falling back to
+// Telegram when the message is not held locally (non-dialog chats or older
+// messages evicted by the per-chat store cap).
+func (f *mediaFetcher) messageForSave(ctx context.Context, chatID int64, msgID int) (domain.Message, error) {
+	msg, err := messageByID(f.state, chatID, msgID)
+	if err == nil || telerr.Of(err) != telerr.NotFound {
+		return msg, err
+	}
+	peer, ok := f.peerFor(chatID)
+	if !ok {
+		return domain.Message{}, err
+	}
+	fresh, rerr := f.client.RefreshMessage(ctx, peer, msgID)
+	if rerr != nil {
+		return domain.Message{}, rerr
+	}
+	if fresh.ID == 0 && fresh.Photo == nil && fresh.Document == nil {
+		return domain.Message{}, err
+	}
+	return fresh, nil
+}
+
 // streamInto writes the media named by (chatID, msgID, slot) into file. On an
 // expired file reference it refreshes the message once, records the fresh
 // reference in state, rewinds the file and retries. The rewind matters: a
@@ -169,8 +202,11 @@ func (f *mediaFetcher) streamInto(ctx context.Context, chatID int64, msgID int, 
 	if err != nil {
 		return err
 	}
+	return f.streamRefInto(ctx, chatID, msgID, slot, ref, file, w)
+}
 
-	err = f.attempt(ctx, ref, file, w)
+func (f *mediaFetcher) streamRefInto(ctx context.Context, chatID int64, msgID int, slot domain.MediaSlot, ref mediaRef, file *os.File, w watch) error {
+	err := f.attempt(ctx, ref, file, w)
 	if telerr.Of(err) != telerr.StaleReference {
 		return err
 	}
@@ -187,11 +223,11 @@ func (f *mediaFetcher) streamInto(ctx context.Context, chatID int64, msgID int, 
 		return err
 	}
 
-	chat, ok := f.state.Store().GetChat(chatID)
+	peer, ok := f.peerFor(chatID)
 	if !ok {
 		return &telerr.Error{Kind: telerr.PeerNotFound}
 	}
-	fresh, rerr := f.client.RefreshMessage(ctx, chat.Peer, msgID)
+	fresh, rerr := f.client.RefreshMessage(ctx, peer, msgID)
 	if rerr != nil {
 		f.log.Warn("media: could not refresh an expired file reference",
 			append(where, zap.Error(rerr))...)
@@ -310,7 +346,7 @@ func (f *mediaFetcher) Fetch(ctx context.Context, chatID int64, msgID int, slot 
 // A non-empty ref with report asks for progress, reported to report alone.
 func (f *mediaFetcher) Save(ctx context.Context, chatID int64, msgID int, slot domain.MediaSlot, destDir, progressRef string, report func(DownloadProgress)) (string, error) {
 	w := watch{ref: progressRef, report: report}
-	msg, err := messageByID(f.state, chatID, msgID)
+	msg, err := f.messageForSave(ctx, chatID, msgID)
 	if err != nil {
 		return "", err
 	}
@@ -323,7 +359,7 @@ func (f *mediaFetcher) Save(ctx context.Context, chatID int64, msgID int, slot d
 		return "", err
 	}
 	name := file.Name()
-	if err := f.streamInto(ctx, chatID, msgID, slot, file, w); err != nil {
+	if err := f.streamRefInto(ctx, chatID, msgID, slot, ref, file, w); err != nil {
 		_ = file.Close()
 		_ = os.Remove(name)
 		return "", err
@@ -370,8 +406,8 @@ func savedFileName(r mediaRef) string {
 	if r.slot == domain.PhotoThumb || r.slot == domain.PhotoFull {
 		return "photo_" + strconv.FormatInt(r.photo.ID, 10) + ".jpg"
 	}
-	if r.doc.FileName != "" {
-		return r.doc.FileName
+	if clean := sanitize.Name(r.doc.FileName); clean != "" {
+		return clean
 	}
 	prefix := "file"
 	switch r.kind {
@@ -413,8 +449,8 @@ func createUniqueFile(dir, name string) (*os.File, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	base := filepath.Base(filepath.Clean(name))
-	if base == "" || base == "." || base == string(filepath.Separator) {
+	base := filepath.Base(filepath.Clean(sanitize.Name(name)))
+	if base == "" || base == "." || base == ".." || base == string(filepath.Separator) {
 		base = "file"
 	}
 	ext := filepath.Ext(base)

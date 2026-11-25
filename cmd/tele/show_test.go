@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"math"
 	"os"
 	"reflect"
 	"strings"
@@ -349,4 +350,93 @@ func TestShowJSON(t *testing.T) {
 	if out.String() != want {
 		t.Errorf("printed\n%s\nwant\n%s", out.String(), want)
 	}
+}
+
+func TestShowJSON_RichMetadataEntitiesReactionsForwardAndEdit(t *testing.T) {
+	edited := at(25, 9, 20)
+	hidden := at(25, 9, 25)
+	// "👋 check site and https://example.com" -> 👋 is 2 UTF-16 code units, so "site" starts at offset 9, len 4; URL starts at 18, len 19.
+	msgs := []domain.Message{
+		{
+			ID:         601,
+			Date:       at(25, 9, 15),
+			EditDate:   &edited,
+			SenderID:   42,
+			SenderName: "Bob",
+			Text:       "👋 check site and https://example.com",
+			GroupedID:  998877,
+			Forward:    &domain.ForwardInfo{From: "\x1b[31mChannel\u202eNews"},
+			Entities: []domain.MessageEntity{
+				{Type: "text_url", Offset: 9, Length: 4, URL: "https://t.me/giftcode/Secret123"},
+				{Type: "url", Offset: 18, Length: 19},
+				{Type: "text_url", Offset: 999, Length: 10, URL: "https://safe.example/path"},
+			},
+			Reactions: []domain.Reaction{
+				{Emoji: "🔥", Count: 3, IsChosen: true},
+				{Emoji: "👍", Count: 1},
+			},
+		},
+		{
+			ID:         602,
+			Date:       at(25, 9, 16),
+			EditDate:   &hidden,
+			EditHidden: true,
+			SenderID:   42,
+			SenderName: "Bob",
+			Text:       "hidden edit",
+			Forward:    &domain.ForwardInfo{},
+		},
+	}
+	var out bytes.Buffer
+	if err := showJSON(&out, msgs, me); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("got %d lines, want 2:\n%s", len(lines), out.String())
+	}
+	assertSays(t, lines[0],
+		`"edit_date":"2026-10-25T09:20:00Z"`,
+		`"grouped_id":998877`,
+		`"forwarded":true`,
+		`"forwarded_from":"ChannelNews"`,
+		`"text":"site","url":"[REDACTED_GIFT_LINK]"`,
+		`"url":"https://example.com"`,
+		`"url":"https://safe.example/path"`,
+		`"emoji":"🔥","count":3,"chosen":true`,
+		`"emoji":"👍","count":1`,
+	)
+	if strings.Contains(lines[0], "Secret123") || strings.Contains(lines[0], "\x1b") || strings.Contains(lines[0], "\u202e") {
+		t.Fatalf("unsanitized or unredacted content in line 0: %s", lines[0])
+	}
+	if strings.Contains(lines[1], "edit_date") {
+		t.Fatalf("edit_hide message exposed edit_date: %s", lines[1])
+	}
+	assertSays(t, lines[1], `"forwarded":true`)
+	if strings.Contains(lines[1], "forwarded_from") {
+		t.Fatalf("hidden forward sender should omit forwarded_from: %s", lines[1])
+	}
+
+	// Overflow, negative offset, split surrogate pair, and gift link in forwarded_from must never panic or leak.
+	overflow := []domain.Message{
+		{
+			ID:      603,
+			Date:    at(25, 9, 17),
+			Text:    "👋 hi",
+			Forward: &domain.ForwardInfo{From: "Claim https://t.me/giftcode/Leak99"},
+			Entities: []domain.MessageEntity{
+				{Type: "url", Offset: 1, Length: math.MaxInt},
+				{Type: "url", Offset: -5, Length: 4},
+				{Type: "text_url", Offset: 1, Length: 1, URL: "https://example.org"},
+			},
+		},
+	}
+	var overflowOut bytes.Buffer
+	if err := showJSON(&overflowOut, overflow, me); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(overflowOut.String(), "Leak99") {
+		t.Fatalf("leaked gift link in forwarded_from: %s", overflowOut.String())
+	}
+	assertSays(t, overflowOut.String(), `[REDACTED_GIFT_LINK]`, `"url":"https://example.org"`)
 }

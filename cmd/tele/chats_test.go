@@ -50,6 +50,13 @@ type fakeAccount struct {
 	sent     []core.SendRequest
 	outcomes []outcome
 	awaited  []time.Duration
+	// savedMedia records SaveMedia requests and answers with savePath/saveErr.
+	savedMedia []saveMediaAsk
+	savePath   string
+	saveErr    error
+	// savedDrafts records SaveDraft requests and answers with draftErr.
+	savedDrafts []draftAsk
+	draftErr    error
 }
 
 func newFakeAccount() *fakeAccount {
