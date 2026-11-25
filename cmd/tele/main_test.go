@@ -64,6 +64,40 @@ func TestStateDirPath_DoesNotCreateTheDirectory(t *testing.T) {
 	}
 }
 
+func TestSetupAppKey_UsesTelegramEnvVars(t *testing.T) {
+	_, cfgPath := isolatedHome(t)
+	s, err := newSetup(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("TELEGRAM_API_ID", "424242")
+	t.Setenv("TELEGRAM_API_HASH", "0123456789abcdef0123456789abcdef")
+
+	key, err := s.appKey()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if key.ID != 424242 || key.Hash != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("got %+v, want env key", key)
+	}
+}
+
+func TestSetupAppKey_RejectsHalfEnvCredentials(t *testing.T) {
+	_, cfgPath := isolatedHome(t)
+	s, err := newSetup(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("TELEGRAM_API_ID", "424242")
+	t.Setenv("TELEGRAM_API_HASH", "")
+
+	if _, err := s.appKey(); err == nil || !strings.Contains(err.Error(), "TELEGRAM_API_ID") {
+		t.Fatalf("got err=%v, want TELEGRAM_API_ID half-key error", err)
+	}
+}
+
 // The homebrew-core formula builds tele from source and then runs two commands,
 // matching their output: `tele --version`, and `tele --theme-dump=tele-dark` for
 // something that does real work without a config file, a network or a terminal.
