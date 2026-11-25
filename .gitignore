@@ -1,5 +1,6 @@
 # AI tools
-.claude/
+.claude/*
+!.claude/settings.json
 docs/superpowers/
 .superpowers/
 TODO.md
@@ -9,9 +10,7 @@ TODO.md
 .mcp.json
 .opencode.json
 .windsurfrules
-AGENTS.md
 !cmd/tele/agents.md
-CLAUDE.md
 CONTEXT.md
 GEMINI.md
 
