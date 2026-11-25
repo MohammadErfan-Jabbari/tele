@@ -161,7 +161,7 @@ func foldersText(filters []domain.FolderFilter) string {
 		if f.ID == 0 || f.ID == domain.ArchiveFolderID {
 			continue
 		}
-		fmt.Fprintf(&b, "  %d %s\n", f.ID, f.Title)
+		fmt.Fprintf(&b, "  %d %s\n", f.ID, sanitize.Name(f.Title))
 	}
 	if b.Len() == 0 {
 		return "  none\n"

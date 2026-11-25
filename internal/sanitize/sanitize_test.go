@@ -36,9 +36,11 @@ func TestMessageText_RedactsTelegramLoginCodesAndGiftLinks(t *testing.T) {
 	normal := MessageText(1234567, "Meet at 28001 Madrid")
 	assert.Equal(t, "Meet at 28001 Madrid", normal)
 
-	// Gift links redacted for every sender.
-	gift := MessageText(1234567, "Claim https://t.me/giftcode/AbC123_xyz or tg://giftcode?slug=SecretSlug99 now")
+	// Gift links redacted for every sender, across Telegram domains and query parameter order.
+	gift := MessageText(1234567, "Claim https://t.me/giftcode/AbC123_xyz or https://telegram.me/giftcode/Me456 or telegram.dog/giftcode/Dog789 or tg://giftcode?foo=1&slug=SecretSlug99 now")
 	assert.NotContains(t, gift, "AbC123_xyz")
+	assert.NotContains(t, gift, "Me456")
+	assert.NotContains(t, gift, "Dog789")
 	assert.NotContains(t, gift, "SecretSlug99")
 	assert.Contains(t, gift, "[REDACTED_GIFT_LINK]")
 }

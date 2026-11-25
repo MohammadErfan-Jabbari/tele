@@ -4,18 +4,23 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
+	"github.com/sorokin-vladimir/tele/internal/core"
 	"github.com/sorokin-vladimir/tele/internal/core/project"
 	"github.com/sorokin-vladimir/tele/internal/domain"
 )
 
-func TestCLI_TeleReadOnlyRefusesSendAndMarkReadBeforeDialing(t *testing.T) {
+func TestCLI_TeleReadOnlyRefusesMutatingAndServiceCommandsBeforeDialing(t *testing.T) {
 	t.Setenv("TELE_READ_ONLY", "1")
 
 	for _, args := range [][]string{
 		{"send", "me", "hello"},
+		{"send", "me"},
 		{"show", "me", "--mark-read"},
+		{"daemon", "install"},
+		{"daemon", "uninstall"},
 	} {
 		cmd := newRootCmd()
 		cmd.SetArgs(args)
@@ -65,5 +70,17 @@ func TestCLI_SanitizesControlCharsAndRedactsSecretsInOutput(t *testing.T) {
 	}
 	if c.Title != "Work Chat" {
 		t.Fatalf("chat title=%q, want Work Chat", c.Title)
+	}
+
+	folders := foldersText([]domain.FolderFilter{{ID: 2, Title: "\x1b[31mNews\u202e\nFeed"}})
+	if strings.Contains(folders, "\x1b") || strings.Contains(folders, "\u202e") || !strings.Contains(folders, "2 News Feed") {
+		t.Fatalf("unsanitized folder title: %q", folders)
+	}
+
+	acc := newFakeAccount()
+	acc.byName = map[core.ChatName]project.ChatRow{{ID: 42}: {ID: 42, Title: "\x1b[31mEvil\u202eChat", IsForum: false}}
+	err := showMessages(shortCtx(t), held(acc), &bytes.Buffer{}, "42", showQuery{limit: 5, topic: 3})
+	if err == nil || strings.Contains(err.Error(), "\x1b") || strings.Contains(err.Error(), "\u202e") || !strings.Contains(err.Error(), "EvilChat") {
+		t.Fatalf("unsanitized error title: %v", err)
 	}
 }

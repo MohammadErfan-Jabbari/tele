@@ -64,7 +64,7 @@ func listTopics(ctx context.Context, acc accountSurface, out, errOut io.Writer, 
 		return err
 	}
 	if !forum.IsForum {
-		return &exitCode{code: notFoundCode, msg: fmt.Sprintf("%s is not a forum: it has no topics.", forum.Title)}
+		return &exitCode{code: notFoundCode, msg: fmt.Sprintf("%s is not a forum: it has no topics.", sanitize.Name(forum.Title))}
 	}
 	topics, err := acc.Topics(ctx, forum.ID)
 	if err != nil {

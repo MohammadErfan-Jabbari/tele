@@ -73,7 +73,7 @@ func searchMessages(ctx context.Context, a heldAccount, out io.Writer, text stri
 			return err
 		}
 		if !row.IsForum && q.topic != 0 {
-			return &exitCode{code: notFoundCode, msg: fmt.Sprintf("%s is not a forum: it has no topics.", row.Title)}
+			return &exitCode{code: notFoundCode, msg: fmt.Sprintf("%s is not a forum: it has no topics.", sanitize.Name(row.Title))}
 		}
 		scope = project.SearchScope{ChatID: row.ID, TopicID: q.topic}
 	}

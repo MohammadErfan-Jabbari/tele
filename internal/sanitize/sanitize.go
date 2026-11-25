@@ -20,7 +20,7 @@ const (
 
 var (
 	ansiPattern      = regexp.MustCompile(`\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|\x1b[@-Z\\-_]`)
-	giftLinkPattern  = regexp.MustCompile(`(?i)(?:https?://)?t\.me/giftcode/[A-Za-z0-9_-]+|tg://giftcode\?slug=[A-Za-z0-9_-]+`)
+	giftLinkPattern  = regexp.MustCompile(`(?i)(?:https?://)?(?:t\.me|telegram\.me|telegram\.dog)/giftcode/[A-Za-z0-9_-]+|tg://giftcode\?(?:[^&\s]*&)*slug=[A-Za-z0-9_-]+`)
 	loginCodePattern = regexp.MustCompile(`\b\d{5,6}\b`)
 )
 

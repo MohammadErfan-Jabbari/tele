@@ -80,32 +80,33 @@ func showMessages(ctx context.Context, a heldAccount, out io.Writer, chat string
 	if err != nil {
 		return err
 	}
+	title := sanitize.Name(row.Title)
 	switch {
 	case row.IsForum && q.topic == 0:
 		return &exitCode{code: notFoundCode, msg: fmt.Sprintf(
-			"%s is a forum: its messages are its topics'. Name one with --topic; `tele topics %s` lists them.", row.Title, chat)}
+			"%s is a forum: its messages are its topics'. Name one with --topic; `tele topics %s` lists them.", title, chat)}
 	case !row.IsForum && q.topic != 0:
-		return &exitCode{code: notFoundCode, msg: fmt.Sprintf("%s is not a forum: it has no topics.", row.Title)}
+		return &exitCode{code: notFoundCode, msg: fmt.Sprintf("%s is not a forum: it has no topics.", title)}
 	}
 	h := domain.HistoryKey{ChatID: row.ID, TopicID: q.topic}
 	var msgs []domain.Message
 	if q.around != 0 {
 		msgs, err = a.HistoryAround(ctx, h, q.around, q.limit)
 		if core.IsNoMessage(err) {
-			return &exitCode{code: notFoundCode, msg: fmt.Sprintf("No message %d in %s.", q.around, row.Title)}
+			return &exitCode{code: notFoundCode, msg: fmt.Sprintf("No message %d in %s.", q.around, title)}
 		}
 	} else {
 		msgs, err = a.History(ctx, h, q.before, q.limit)
 	}
 	if telerr.Of(err) == telerr.PeerNotFound || telerr.Of(err) == telerr.NotFound {
-		return &exitCode{code: notFoundCode, msg: fmt.Sprintf("No topic %d in %s.", q.topic, row.Title)}
+		return &exitCode{code: notFoundCode, msg: fmt.Sprintf("No topic %d in %s.", q.topic, title)}
 	}
 	if err != nil {
 		return err
 	}
 	if q.markRead && len(msgs) > 0 {
 		if err := a.MarkRead(ctx, h, msgs[len(msgs)-1].ID); err != nil {
-			return fmt.Errorf("marking %s read: %w", row.Title, err)
+			return fmt.Errorf("marking %s read: %w", title, err)
 		}
 	}
 	if q.asJSON {

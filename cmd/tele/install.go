@@ -17,6 +17,7 @@ import (
 	"github.com/sorokin-vladimir/tele/internal/ipc"
 	"github.com/sorokin-vladimir/tele/internal/ipc/dial"
 	"github.com/sorokin-vladimir/tele/internal/ipc/wire"
+	"github.com/sorokin-vladimir/tele/internal/readonly"
 	"github.com/sorokin-vladimir/tele/internal/service"
 	"github.com/sorokin-vladimir/tele/internal/version"
 )
@@ -113,6 +114,9 @@ func unitOf(s setup, entry string) (service.Unit, error) {
 // install installs the service of o's config, running given or tele as the
 // PATH finds it, and starts it.
 func (in installer) install(ctx context.Context, o options, given string) error {
+	if readonly.Active() {
+		return &exitCode{code: commandsOffCode, msg: "Not allowed: TELE_READ_ONLY is enabled in the process environment."}
+	}
 	s, err := newSetup(o.cfgPath)
 	if err != nil {
 		return err
@@ -203,6 +207,9 @@ func (in installer) offer(o options) *app.ServiceOffer {
 // uninstall tells the service of o's config it is being uninstalled, so it
 // stops for good, and removes its unit. State and config are left alone.
 func (in installer) uninstall(ctx context.Context, o options) error {
+	if readonly.Active() {
+		return &exitCode{code: commandsOffCode, msg: "Not allowed: TELE_READ_ONLY is enabled in the process environment."}
+	}
 	s, err := newSetup(o.cfgPath)
 	if err != nil {
 		return err

@@ -19,7 +19,7 @@ import (
 	"github.com/sorokin-vladimir/tele/internal/telerr"
 )
 
-var hello = wire.Hello{Protocol: wire.ProtocolVersion, Binary: "dev", Config: "/tmp/tele/config.yml"}
+var hello = wire.Hello{Protocol: wire.ProtocolVersion, Binary: "dev", Config: "/tmp/tele/config.yml", Kind: wire.KindWindow}
 
 // helloHost is a host that says hello and holds no settings.
 type helloHost struct{}
@@ -349,27 +349,40 @@ func TestAHostRefusesASubscriptionIDThatDoesNotGrow(t *testing.T) {
 	c.refused(t)
 }
 
-func TestTeleReadOnlyEnvClampsCommandsAllAndRefusesRestartUninstall(t *testing.T) {
+func TestTeleReadOnlyEnvClampsNonWindowClientsAndAllowsWindows(t *testing.T) {
 	t.Setenv("TELE_READ_ONLY", "1")
-	command := serveAs(t, wire.KindCommand, wire.CommandsAll)
-
-	// A mutating account call is refused even though the host config says all.
 	markParams, err := protocol.Calls["MarkRead"].Params(domain.HistoryKey{ChatID: 1}, 5)
 	require.NoError(t, err)
-	require.NoError(t, command.enc.Encode(wire.Request(2, "MarkRead", markParams)))
-	f, err := command.dec.Decode()
-	require.NoError(t, err)
-	require.NotNil(t, f.Error)
-	assert.Equal(t, telerr.CommandsOff, f.Error.Kind)
 
-	// $restart and $uninstall are also refused from KindCommand under TELE_READ_ONLY=1.
-	f = command.ask(t, 3, wire.MethodRestart)
-	var restart wire.RestartResult
-	require.NoError(t, json.Unmarshal(f.Result, &restart))
-	assert.NotEmpty(t, restart.Refused)
+	for _, kind := range []wire.ClientKind{wire.KindCommand, "", wire.ClientKind("unknown")} {
+		t.Run("clamped_"+string(kind), func(t *testing.T) {
+			client := serveAs(t, kind, wire.CommandsAll)
 
-	f = command.ask(t, 4, wire.MethodUninstall)
-	var uninstall wire.UninstallResult
-	require.NoError(t, json.Unmarshal(f.Result, &uninstall))
-	assert.NotEmpty(t, uninstall.Refused)
+			// Mutating account call is refused even though the host config says all.
+			require.NoError(t, client.enc.Encode(wire.Request(2, "MarkRead", markParams)))
+			f, err := client.dec.Decode()
+			require.NoError(t, err)
+			require.NotNil(t, f.Error)
+			assert.Equal(t, telerr.CommandsOff, f.Error.Kind)
+
+			// $restart and $uninstall are refused for any non-window client under TELE_READ_ONLY=1.
+			f = client.ask(t, 3, wire.MethodRestart)
+			var restart wire.RestartResult
+			require.NoError(t, json.Unmarshal(f.Result, &restart))
+			assert.Contains(t, restart.Refused, "TELE_READ_ONLY")
+
+			f = client.ask(t, 4, wire.MethodUninstall)
+			var uninstall wire.UninstallResult
+			require.NoError(t, json.Unmarshal(f.Result, &uninstall))
+			assert.Contains(t, uninstall.Refused, "TELE_READ_ONLY")
+		})
+	}
+
+	t.Run("window_client_keeps_host_lifecycle", func(t *testing.T) {
+		win := serveAs(t, wire.KindWindow, wire.CommandsAll)
+		f := win.ask(t, 2, wire.MethodRestart)
+		var restart wire.RestartResult
+		require.NoError(t, json.Unmarshal(f.Result, &restart))
+		assert.Empty(t, restart.Refused)
+	})
 }

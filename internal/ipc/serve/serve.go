@@ -256,7 +256,7 @@ func (c *served) request(ctx context.Context, f wire.Frame, running *sync.WaitGr
 	if readonly.Active() && access == wire.CommandsAll {
 		access = wire.CommandsRead
 	}
-	if c.kind == wire.KindCommand && !commandMay(access, f.Method) {
+	if c.kind != wire.KindWindow && !commandMay(access, f.Method) {
 		err := &telerr.Error{
 			Kind: telerr.CommandsOff, Op: f.Method,
 			Detail: fmt.Sprintf("cli.account_commands is %s for the tele holding the account", access),
@@ -333,7 +333,8 @@ func (c *served) hostCall(f wire.Frame) (answer any, then func(), ok bool, err e
 	// A command never changes the host's settings: one that could would turn
 	// cli.account_commands back on (#181).
 	const commandsDoNotSet = "A command does not change the settings of the tele holding the account."
-	if c.kind == wire.KindCommand {
+	const readOnlyLifecycle = "Not allowed: TELE_READ_ONLY refuses host restart and uninstall from non-window clients."
+	if c.kind != wire.KindWindow {
 		switch f.Method {
 		case wire.MethodSet:
 			return wire.SetResult{Refused: commandsDoNotSet}, nil, true, nil
@@ -341,11 +342,11 @@ func (c *served) hostCall(f wire.Frame) (answer any, then func(), ok bool, err e
 			return wire.ReloadResult{Failed: commandsDoNotSet}, nil, true, nil
 		case wire.MethodRestart:
 			if readonly.Active() {
-				return wire.RestartResult{Refused: commandsDoNotSet}, nil, true, nil
+				return wire.RestartResult{Refused: readOnlyLifecycle}, nil, true, nil
 			}
 		case wire.MethodUninstall:
 			if readonly.Active() {
-				return wire.UninstallResult{Refused: commandsDoNotSet}, nil, true, nil
+				return wire.UninstallResult{Refused: readOnlyLifecycle}, nil, true, nil
 			}
 		}
 	}

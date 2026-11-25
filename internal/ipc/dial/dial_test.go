@@ -22,7 +22,7 @@ import (
 )
 
 // hello is what both ends say of themselves when they are the same build.
-var hello = wire.Hello{Protocol: wire.ProtocolVersion, Binary: "dev", Config: "/tmp/tele/config.yml"}
+var hello = wire.Hello{Protocol: wire.ProtocolVersion, Binary: "dev", Config: "/tmp/tele/config.yml", Kind: wire.KindWindow}
 
 // connect is an attachment over a connection whose other end serves s.
 func connect(t *testing.T, s serve.Attachment) *dial.Attachment {

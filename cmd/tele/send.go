@@ -14,6 +14,7 @@ import (
 	"github.com/sorokin-vladimir/tele/internal/domain"
 	"github.com/sorokin-vladimir/tele/internal/markup"
 	"github.com/sorokin-vladimir/tele/internal/readonly"
+	"github.com/sorokin-vladimir/tele/internal/sanitize"
 	"github.com/sorokin-vladimir/tele/internal/telerr"
 )
 
@@ -45,12 +46,12 @@ func newSendCmd(o *options) *cobra.Command {
 			if q.timeout <= 0 {
 				return &exitCode{code: usageCode, msg: "--timeout is more than nothing, such as 30s or 2m."}
 			}
+			if readonly.Active() {
+				return &exitCode{code: commandsOffCode, msg: "Not allowed: TELE_READ_ONLY is enabled in the process environment."}
+			}
 			text, err := composeText(args[1:], cmd.InOrStdin())
 			if err != nil {
 				return err
-			}
-			if readonly.Active() {
-				return &exitCode{code: commandsOffCode, msg: "Not allowed: TELE_READ_ONLY is enabled in the process environment."}
 			}
 			within := readyTimeout
 			if !q.noWait {
@@ -110,10 +111,11 @@ func sendMessage(ctx context.Context, acc accountSurface, out io.Writer, chat, t
 	if err != nil {
 		return err
 	}
+	title := sanitize.Name(row.Title)
 	topic := q.topic
 	switch {
 	case !row.IsForum && topic != 0:
-		return &exitCode{code: notFoundCode, msg: fmt.Sprintf("%s is not a forum: it has no topics.", row.Title)}
+		return &exitCode{code: notFoundCode, msg: fmt.Sprintf("%s is not a forum: it has no topics.", title)}
 	case row.IsForum && topic == 0:
 		// As Telegram's own apps do.
 		topic = domain.GeneralTopicID
@@ -142,11 +144,11 @@ func sendMessage(ctx context.Context, acc accountSurface, out io.Writer, chat, t
 		got, err := acc.AwaitSend(ctx, req.Ref, time.Until(deadline))
 		switch {
 		case err == nil:
-			return sendAnswer(out, row.Title, req.Ref, got, q)
+			return sendAnswer(out, title, req.Ref, got, q)
 		case telerr.Of(err) == telerr.CommandsOff:
 			return err
 		case telerr.Of(err) == telerr.NotFound:
-			return fmt.Errorf("the message to %s was discarded before it went", row.Title)
+			return fmt.Errorf("the message to %s was discarded before it went", title)
 		}
 		// The answer was lost, most likely with the tele holding the account:
 		// a service comes back, and is asked again while there is time.

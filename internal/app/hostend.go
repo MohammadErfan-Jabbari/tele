@@ -10,6 +10,7 @@ import (
 	"github.com/sorokin-vladimir/tele/internal/core"
 	"github.com/sorokin-vladimir/tele/internal/ipc/serve"
 	"github.com/sorokin-vladimir/tele/internal/ipc/wire"
+	"github.com/sorokin-vladimir/tele/internal/readonly"
 	"github.com/sorokin-vladimir/tele/internal/settings"
 )
 
@@ -87,7 +88,11 @@ func (e *HostEnd) Restart() (wire.RestartResult, func()) {
 // AccountCommands is cli.account_commands as the host read it last: what a
 // command may do with the account (#181).
 func (e *HostEnd) AccountCommands() wire.CommandAccess {
-	return wire.CommandAccess(e.store.Current().CLI.AccountCommands)
+	access := wire.CommandAccess(e.store.Current().CLI.AccountCommands)
+	if readonly.Active() && access == wire.CommandsAll {
+		return wire.CommandsRead
+	}
+	return access
 }
 
 // Uninstall takes note that the host, a service, is being uninstalled: the
