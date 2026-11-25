@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/spf13/cobra"
@@ -193,14 +194,31 @@ func body(m domain.Message) string {
 // within a major version (docs/cli.md). What a message does not have is left
 // out; a file is described and never pointed at.
 type messageJSON struct {
-	ID       int        `json:"id"`
-	Date     time.Time  `json:"date"`
-	SenderID int64      `json:"sender_id,omitempty"`
-	Sender   string     `json:"sender,omitempty"`
-	Out      bool       `json:"out"`
-	Text     string     `json:"text,omitempty"`
-	ReplyTo  int        `json:"reply_to,omitempty"`
-	Media    *mediaJSON `json:"media,omitempty"`
+	ID            int            `json:"id"`
+	Date          time.Time      `json:"date"`
+	EditDate      *time.Time     `json:"edit_date,omitempty"`
+	SenderID      int64          `json:"sender_id,omitempty"`
+	Sender        string         `json:"sender,omitempty"`
+	Out           bool           `json:"out"`
+	Text          string         `json:"text,omitempty"`
+	ReplyTo       int            `json:"reply_to,omitempty"`
+	GroupedID     int64          `json:"grouped_id,omitempty"`
+	Forwarded     bool           `json:"forwarded,omitempty"`
+	ForwardedFrom string         `json:"forwarded_from,omitempty"`
+	Links         []linkJSON     `json:"links,omitempty"`
+	Reactions     []reactionJSON `json:"reactions,omitempty"`
+	Media         *mediaJSON     `json:"media,omitempty"`
+}
+
+type linkJSON struct {
+	Text string `json:"text,omitempty"`
+	URL  string `json:"url"`
+}
+
+type reactionJSON struct {
+	Emoji  string `json:"emoji"`
+	Count  int    `json:"count"`
+	Chosen bool   `json:"chosen,omitempty"`
 }
 
 type mediaJSON struct {
@@ -244,9 +262,30 @@ func messageOf(m domain.Message, me project.LoggedInUser) messageJSON {
 	j := messageJSON{
 		ID: m.ID, Date: m.Date, SenderID: m.SenderID, Sender: sanitize.Name(m.SenderName),
 		Out: m.IsOut, Text: sanitize.MessageText(m.SenderID, m.Text), ReplyTo: m.ReplyToMsgID,
+		GroupedID: m.GroupedID,
+	}
+	if m.ShowsEdited() {
+		j.EditDate = m.EditDate
 	}
 	if m.IsOut {
 		j.SenderID, j.Sender = me.ID, sanitize.Name(me.Name)
+	}
+	if m.Forward != nil {
+		j.Forwarded = true
+		j.ForwardedFrom = sanitize.Name(m.Forward.From)
+	}
+	if links := linksOf(m); len(links) > 0 {
+		j.Links = links
+	}
+	if len(m.Reactions) > 0 {
+		j.Reactions = make([]reactionJSON, 0, len(m.Reactions))
+		for _, r := range m.Reactions {
+			j.Reactions = append(j.Reactions, reactionJSON{
+				Emoji:  sanitize.Name(r.Emoji),
+				Count:  r.Count,
+				Chosen: r.IsChosen,
+			})
+		}
 	}
 	if r := m.Media; r != nil {
 		j.Media = &mediaJSON{
@@ -255,4 +294,46 @@ func messageOf(m domain.Message, me project.LoggedInUser) messageJSON {
 		}
 	}
 	return j
+}
+
+// linksOf extracts sanitized URL and text_url entities from m using Telegram's
+// UTF-16 code-unit offsets.
+func linksOf(m domain.Message) []linkJSON {
+	if len(m.Entities) == 0 {
+		return nil
+	}
+	var units []uint16
+	var out []linkJSON
+	for _, e := range m.Entities {
+		switch e.Type {
+		case "text_url":
+			u := sanitize.MessageText(m.SenderID, sanitize.Name(e.URL))
+			if u == "" {
+				continue
+			}
+			if units == nil {
+				units = utf16.Encode([]rune(m.Text))
+			}
+			txt := sanitize.MessageText(m.SenderID, sliceUTF16(units, e.Offset, e.Length))
+			out = append(out, linkJSON{Text: txt, URL: u})
+		case "url":
+			if units == nil {
+				units = utf16.Encode([]rune(m.Text))
+			}
+			u := sanitize.MessageText(m.SenderID, sanitize.Name(sliceUTF16(units, e.Offset, e.Length)))
+			if u == "" {
+				continue
+			}
+			out = append(out, linkJSON{URL: u})
+		}
+	}
+	return out
+}
+
+func sliceUTF16(units []uint16, offset, length int) string {
+	if offset < 0 || length <= 0 || offset >= len(units) {
+		return ""
+	}
+	end := min(offset+length, len(units))
+	return string(utf16.Decode(units[offset:end]))
 }
