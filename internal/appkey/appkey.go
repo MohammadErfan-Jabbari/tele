@@ -27,7 +27,7 @@ type Key struct {
 }
 
 // whole reports that both halves are there.
-func (k Key) whole() bool { return k.ID != 0 && k.Hash != "" }
+func (k Key) whole() bool { return k.ID > 0 && k.Hash != "" }
 
 // empty reports that neither half is there.
 func (k Key) empty() bool { return k.ID == 0 && k.Hash == "" }
@@ -38,6 +38,8 @@ type Source string
 const (
 	// SourceUser is a key the person put in their config.
 	SourceUser Source = "user"
+	// SourceEnv is a key supplied through TELEGRAM_API_ID and TELEGRAM_API_HASH.
+	SourceEnv Source = "env"
 	// SourceInjected is the key the release pipeline compiled into an official
 	// build.
 	SourceInjected Source = "injected"

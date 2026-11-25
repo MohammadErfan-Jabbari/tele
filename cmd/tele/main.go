@@ -176,18 +176,16 @@ func newSetup(cfgPath string) (setup, error) {
 func (s setup) appKey() (appkey.Key, error) {
 	envKey, err := appkey.FromEnv(os.Getenv)
 	if err != nil {
-		switch {
-		case errors.Is(err, appkey.ErrHalfKey):
+		if errors.Is(err, appkey.ErrHalfKey) {
 			return appkey.Key{}, fmt.Errorf("env: set both %s and %s, or neither", appkey.EnvAPIID, appkey.EnvAPIHash)
-		default:
-			return appkey.Key{}, fmt.Errorf("env: %w", err)
 		}
+		return appkey.Key{}, fmt.Errorf("env: %w", err)
 	}
 	cfg := s.store.Current()
 	injectedID, _ := strconv.Atoi(buildAPIID)
 	key, source, err := appkey.ResolveWithEnv(
-		envKey,
 		appkey.Key{ID: cfg.Telegram.APIID, Hash: cfg.Telegram.APIHash},
+		envKey,
 		appkey.Key{ID: injectedID, Hash: buildAPIHash},
 	)
 	switch {

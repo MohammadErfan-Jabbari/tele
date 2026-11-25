@@ -66,6 +66,9 @@ func TestStateDirPath_DoesNotCreateTheDirectory(t *testing.T) {
 
 func TestSetupAppKey_UsesTelegramEnvVars(t *testing.T) {
 	_, cfgPath := isolatedHome(t)
+	if err := os.WriteFile(cfgPath, []byte("telegram:\n  api_id: 0\n  api_hash: \"\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	s, err := newSetup(cfgPath)
 	if err != nil {
 		t.Fatal(err)
@@ -80,6 +83,35 @@ func TestSetupAppKey_UsesTelegramEnvVars(t *testing.T) {
 	}
 	if key.ID != 424242 || key.Hash != "0123456789abcdef0123456789abcdef" {
 		t.Fatalf("got %+v, want env key", key)
+	}
+	for _, setting := range []string{"telegram.api_id", "telegram.api_hash"} {
+		v, _ := s.store.Value(setting)
+		if fmt.Sprint(v) != "from environment" {
+			t.Fatalf("store.Value(%q) = %v, want %q", setting, v, "from environment")
+		}
+	}
+}
+
+func TestSetupAppKey_ConfigOutranksEnvVars(t *testing.T) {
+	_, cfgPath := isolatedHome(t)
+	body := "telegram:\n  api_id: 111111\n  api_hash: confighash\n"
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := newSetup(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("TELEGRAM_API_ID", "424242")
+	t.Setenv("TELEGRAM_API_HASH", "0123456789abcdef0123456789abcdef")
+
+	key, err := s.appKey()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if key.ID != 111111 || key.Hash != "confighash" {
+		t.Fatalf("got %+v, want config key to outrank env", key)
 	}
 }
 

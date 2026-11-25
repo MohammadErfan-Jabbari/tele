@@ -36,8 +36,13 @@ func TestFromEnv(t *testing.T) {
 			err:  ErrInvalidEnvID,
 		},
 		{
-			name: "zero or negative id returns ErrInvalidEnvID",
+			name: "zero id returns ErrInvalidEnvID",
 			env:  map[string]string{EnvAPIID: "0", EnvAPIHash: "abcdef"},
+			err:  ErrInvalidEnvID,
+		},
+		{
+			name: "negative id returns ErrInvalidEnvID",
+			env:  map[string]string{EnvAPIID: "-1", EnvAPIHash: "abcdef"},
 			err:  ErrInvalidEnvID,
 		},
 	}
@@ -52,26 +57,43 @@ func TestFromEnv(t *testing.T) {
 }
 
 func TestResolveWithEnv(t *testing.T) {
-	envKey := Key{ID: 99, Hash: "envhash"}
 	userKey := Key{ID: 1, Hash: "userhash"}
+	envKey := Key{ID: 99, Hash: "envhash"}
 	injectedKey := Key{ID: 2, Hash: "injectedhash"}
 
-	t.Run("env key outranks config and injected keys", func(t *testing.T) {
-		got, src, err := ResolveWithEnv(envKey, userKey, injectedKey)
-		require.NoError(t, err)
-		assert.Equal(t, envKey, got)
-		assert.Equal(t, SourceUser, src)
-	})
-
-	t.Run("empty env falls back to config user key", func(t *testing.T) {
-		got, src, err := ResolveWithEnv(Key{}, userKey, injectedKey)
+	t.Run("config user key outranks env and injected keys", func(t *testing.T) {
+		got, src, err := ResolveWithEnv(userKey, envKey, injectedKey)
 		require.NoError(t, err)
 		assert.Equal(t, userKey, got)
 		assert.Equal(t, SourceUser, src)
 	})
 
-	t.Run("half env key fails instead of falling back", func(t *testing.T) {
-		_, _, err := ResolveWithEnv(Key{ID: 99}, userKey, injectedKey)
+	t.Run("half config key fails even when env key is set", func(t *testing.T) {
+		_, _, err := ResolveWithEnv(Key{ID: 1}, envKey, injectedKey)
 		require.ErrorIs(t, err, ErrHalfKey)
+	})
+
+	t.Run("env key outranks injected key when config is empty", func(t *testing.T) {
+		got, src, err := ResolveWithEnv(Key{}, envKey, injectedKey)
+		require.NoError(t, err)
+		assert.Equal(t, envKey, got)
+		assert.Equal(t, SourceEnv, src)
+	})
+
+	t.Run("half env key fails instead of falling back to injected", func(t *testing.T) {
+		_, _, err := ResolveWithEnv(Key{}, Key{ID: 99}, injectedKey)
+		require.ErrorIs(t, err, ErrHalfKey)
+	})
+
+	t.Run("negative env id is rejected by whole check", func(t *testing.T) {
+		_, _, err := ResolveWithEnv(Key{}, Key{ID: -5, Hash: "h"}, injectedKey)
+		require.ErrorIs(t, err, ErrHalfKey)
+	})
+
+	t.Run("empty config and env fall back to injected key", func(t *testing.T) {
+		got, src, err := ResolveWithEnv(Key{}, Key{}, injectedKey)
+		require.NoError(t, err)
+		assert.Equal(t, injectedKey, got)
+		assert.Equal(t, SourceInjected, src)
 	})
 }

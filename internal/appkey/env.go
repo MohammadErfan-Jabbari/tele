@@ -32,15 +32,20 @@ func FromEnv(getenv func(string) string) (Key, error) {
 	return Key{ID: id, Hash: hash}, nil
 }
 
-// ResolveWithEnv gives an environment key precedence over config.yml,
-// build-time ldflags, and the published key.
-func ResolveWithEnv(env, user, injected Key) (Key, Source, error) {
+// ResolveWithEnv picks the key tele runs on with precedence:
+// config.yml (user) > environment (env) > build-time ldflags (injected) > published.
+// Half a key in config or environment fails closed instead of falling back.
+func ResolveWithEnv(user, env, injected Key) (Key, Source, error) {
 	switch {
+	case user.whole():
+		return user, SourceUser, nil
+	case !user.empty():
+		return Key{}, "", ErrHalfKey
 	case env.whole():
-		return env, SourceUser, nil
+		return env, SourceEnv, nil
 	case !env.empty():
 		return Key{}, "", ErrHalfKey
 	default:
-		return Resolve(user, injected)
+		return Resolve(Key{}, injected)
 	}
 }
