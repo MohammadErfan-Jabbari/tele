@@ -105,6 +105,7 @@ func TestSettings_NamesTheBuiltInKeyInForce(t *testing.T) {
 		source appkey.Source
 		want   string
 	}{
+		{appkey.SourceEnv, "from environment"},
 		{appkey.SourceInjected, "built-in (official build)"},
 		{appkey.SourcePublished, "built-in (published)"},
 	} {

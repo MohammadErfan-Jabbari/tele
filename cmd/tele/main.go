@@ -174,10 +174,18 @@ func newSetup(cfgPath string) (setup, error) {
 // config is what the file says, and a reload would lose a key written into it
 // (#239).
 func (s setup) appKey() (appkey.Key, error) {
+	envKey, err := appkey.FromEnv(os.Getenv)
+	if err != nil {
+		if errors.Is(err, appkey.ErrHalfKey) {
+			return appkey.Key{}, fmt.Errorf("env: set both %s and %s, or neither", appkey.EnvAPIID, appkey.EnvAPIHash)
+		}
+		return appkey.Key{}, fmt.Errorf("env: %w", err)
+	}
 	cfg := s.store.Current()
 	injectedID, _ := strconv.Atoi(buildAPIID)
-	key, source, err := appkey.Resolve(
+	key, source, err := appkey.ResolveWithEnv(
 		appkey.Key{ID: cfg.Telegram.APIID, Hash: cfg.Telegram.APIHash},
+		envKey,
 		appkey.Key{ID: injectedID, Hash: buildAPIHash},
 	)
 	switch {

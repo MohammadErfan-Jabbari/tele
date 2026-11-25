@@ -59,6 +59,8 @@ func (s *Store) builtInKey(cfg *Config, key string) (settings.Described, bool) {
 		return "", false
 	}
 	switch s.keySource {
+	case appkey.SourceEnv:
+		return "from environment", true
 	case appkey.SourceInjected:
 		return "built-in (official build)", true
 	case appkey.SourcePublished:
