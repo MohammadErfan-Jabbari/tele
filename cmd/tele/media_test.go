@@ -58,8 +58,12 @@ func TestMediaSave_AutoDetectsPhotoAndDocumentAndPrintsJSON(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.ChatID != 42 || got.MessageID != 100 || got.Slot != "doc_full" || got.Path != saved || got.Size != 9 {
-		t.Fatalf("got json %+v", got)
+	wantPath, err := canonicalPath(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ChatID != 42 || got.MessageID != 100 || got.Slot != "doc_full" || got.Path != wantPath || got.Size != 9 {
+		t.Fatalf("got json %+v, want path %q", got, wantPath)
 	}
 }
 
@@ -84,8 +88,12 @@ func TestMediaSave_AutoDetectsPhotoAndExplicitSlotOverride(t *testing.T) {
 	if acc.savedMedia[0].slot != domain.PhotoFull {
 		t.Fatalf("slot = %v, want PhotoFull", acc.savedMedia[0].slot)
 	}
-	if strings.TrimSpace(out.String()) != saved {
-		t.Fatalf("out = %q, want %q", out.String(), saved)
+	wantPath, err := canonicalPath(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out.String()) != wantPath {
+		t.Fatalf("out = %q, want %q", out.String(), wantPath)
 	}
 
 	out.Reset()
