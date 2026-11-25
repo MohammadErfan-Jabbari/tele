@@ -14,6 +14,7 @@ import (
 
 	"github.com/sorokin-vladimir/tele/internal/core/project"
 	"github.com/sorokin-vladimir/tele/internal/domain"
+	"github.com/sorokin-vladimir/tele/internal/sanitize"
 )
 
 // newChatsCmd is `tele chats`: the chats of the account, a line each (#181).
@@ -160,7 +161,7 @@ func foldersText(filters []domain.FolderFilter) string {
 		if f.ID == 0 || f.ID == domain.ArchiveFolderID {
 			continue
 		}
-		fmt.Fprintf(&b, "  %d %s\n", f.ID, f.Title)
+		fmt.Fprintf(&b, "  %d %s\n", f.ID, sanitize.Name(f.Title))
 	}
 	if b.Len() == 0 {
 		return "  none\n"
@@ -191,7 +192,7 @@ func chatsJSON(out io.Writer, rows []project.ChatRow) error {
 	enc := json.NewEncoder(out)
 	for _, c := range rows {
 		err := enc.Encode(chatJSON{
-			ID: c.ID, Title: c.Title, Username: c.Username, Kind: c.Kind,
+			ID: c.ID, Title: sanitize.Name(c.Title), Username: sanitize.Name(c.Username), Kind: c.Kind,
 			Unread: c.Unread, Mentions: c.Mentions, Reactions: c.Reactions,
 			UnreadMark: c.UnreadMark, Muted: c.Muted, Archived: c.Archived, Forum: c.IsForum,
 		})
@@ -206,9 +207,9 @@ func chatsJSON(out io.Writer, rows []project.ChatRow) error {
 func chatsText(rows []project.ChatRow, nameWidth int) string {
 	lines := make([]columnLine, 0, len(rows))
 	for _, c := range rows {
-		l := columnLine{id: fmt.Sprint(c.ID), title: c.Title, badges: chatBadges(c)}
-		if c.Username != "" {
-			l.username = "@" + c.Username
+		l := columnLine{id: fmt.Sprint(c.ID), title: sanitize.Name(c.Title), badges: chatBadges(c)}
+		if u := sanitize.Name(c.Username); u != "" {
+			l.username = "@" + u
 		}
 		lines = append(lines, l)
 	}

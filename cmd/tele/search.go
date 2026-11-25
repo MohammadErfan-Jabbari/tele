@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/sorokin-vladimir/tele/internal/core/project"
+	"github.com/sorokin-vladimir/tele/internal/sanitize"
 )
 
 // maxSearchLimit bounds --limit: Telegram answers a search a page at a time,
@@ -72,7 +73,7 @@ func searchMessages(ctx context.Context, a heldAccount, out io.Writer, text stri
 			return err
 		}
 		if !row.IsForum && q.topic != 0 {
-			return &exitCode{code: notFoundCode, msg: fmt.Sprintf("%s is not a forum: it has no topics.", row.Title)}
+			return &exitCode{code: notFoundCode, msg: fmt.Sprintf("%s is not a forum: it has no topics.", sanitize.Name(row.Title))}
 		}
 		scope = project.SearchScope{ChatID: row.ID, TopicID: q.topic}
 	}
@@ -103,7 +104,7 @@ func searchJSON(out io.Writer, found []project.FoundMessage, me project.LoggedIn
 	enc := json.NewEncoder(out)
 	for _, f := range found {
 		m := f.Message
-		if err := enc.Encode(foundJSON{ChatID: m.ChatID, Chat: f.Chat, TopicID: m.TopicID, messageJSON: messageOf(m, me)}); err != nil {
+		if err := enc.Encode(foundJSON{ChatID: m.ChatID, Chat: sanitize.Name(f.Chat), TopicID: m.TopicID, messageJSON: messageOf(m, me)}); err != nil {
 			return err
 		}
 	}
@@ -120,7 +121,7 @@ func searchText(found []project.FoundMessage, nameWidth int, loc *time.Location)
 	var idW, whereW, whoW int
 	for _, f := range found {
 		m := f.Message
-		where := cutName(f.Chat, nameWidth)
+		where := cutName(sanitize.Name(f.Chat), nameWidth)
 		if m.TopicID != 0 {
 			where += fmt.Sprintf(" › topic %d", m.TopicID)
 		}

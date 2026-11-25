@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/sorokin-vladimir/tele/internal/core/project"
+	"github.com/sorokin-vladimir/tele/internal/sanitize"
 )
 
 // newTopicsCmd is `tele topics CHAT`: a forum's topics, a line each (#181).
@@ -63,7 +64,7 @@ func listTopics(ctx context.Context, acc accountSurface, out, errOut io.Writer, 
 		return err
 	}
 	if !forum.IsForum {
-		return &exitCode{code: notFoundCode, msg: fmt.Sprintf("%s is not a forum: it has no topics.", forum.Title)}
+		return &exitCode{code: notFoundCode, msg: fmt.Sprintf("%s is not a forum: it has no topics.", sanitize.Name(forum.Title))}
 	}
 	topics, err := acc.Topics(ctx, forum.ID)
 	if err != nil {
@@ -77,7 +78,7 @@ func listTopics(ctx context.Context, acc accountSurface, out, errOut io.Writer, 
 	}
 	lines := make([]columnLine, 0, len(topics))
 	for _, t := range topics {
-		lines = append(lines, columnLine{id: fmt.Sprint(t.ID), title: t.Title, badges: topicBadges(t)})
+		lines = append(lines, columnLine{id: fmt.Sprint(t.ID), title: sanitize.Name(t.Title), badges: topicBadges(t)})
 	}
 	_, err = io.WriteString(out, columnsText(lines, q.nameWidth))
 	if err != nil {
@@ -131,7 +132,7 @@ func topicsJSON(out io.Writer, topics []project.TopicRow) error {
 	enc := json.NewEncoder(out)
 	for _, t := range topics {
 		err := enc.Encode(topicJSON{
-			ID: t.ID, Title: t.Title, Unread: t.Unread, Mentions: t.Mentions, Reactions: t.Reactions,
+			ID: t.ID, Title: sanitize.Name(t.Title), Unread: t.Unread, Mentions: t.Mentions, Reactions: t.Reactions,
 			Muted: t.Muted, Pinned: t.Pinned, Closed: t.Closed,
 		})
 		if err != nil {
