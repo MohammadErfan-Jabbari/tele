@@ -269,6 +269,112 @@ func TestUninstall_TellsTheServiceAndRemovesItsUnit(t *testing.T) {
 	assertSays(t, out.String(), "Uninstalled", "left")
 }
 
+// refusingHost refuses $uninstall with a custom reason and reports status.
+type refusingHost struct {
+	heldHost
+	refused  string
+	readOnly bool
+}
+
+func (h refusingHost) Uninstall() wire.UninstallResult {
+	return wire.UninstallResult{Refused: h.refused}
+}
+
+func (h refusingHost) Status() wire.HostStatus {
+	return wire.HostStatus{ReadOnly: h.readOnly}
+}
+
+func TestInstall_AbortsWhenRunningHostEnforcesTeleReadOnly(t *testing.T) {
+	stateDir, cfg := isolatedHome(t)
+	running, _ := teleOnPath(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	r, err := hosting.Reach(ctx, "tele", stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := refusingHost{
+		heldHost: heldHost{wire.Hello{Protocol: wire.ProtocolVersion, Binary: "dev", Kept: wire.KeptByService}},
+		readOnly: true,
+	}
+	srv := hosting.Serve(context.Background(), r.Listener, host, hosting.NewClients())
+	t.Cleanup(func() {
+		srv.Stop(time.Second, core.StopQuit)
+		r.Close()
+	})
+	m := &managed{}
+	var out bytes.Buffer
+
+	err = installing(m, running, &out).install(ctx, options{cfgPath: cfg}, "")
+
+	var ec *exitCode
+	if !errors.As(err, &ec) || ec.code != commandsOffCode {
+		t.Fatalf("got err=%v, want exitCode %d", err, commandsOffCode)
+	}
+	if len(m.installed) != 0 {
+		t.Fatalf("installed unit despite running host TELE_READ_ONLY: %v", m.installed)
+	}
+}
+
+func TestUninstall_AbortsWhenHostRefusesForTeleReadOnly(t *testing.T) {
+	stateDir, cfg := isolatedHome(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	r, err := hosting.Reach(ctx, "tele", stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := refusingHost{
+		heldHost: heldHost{wire.Hello{Protocol: wire.ProtocolVersion, Binary: "dev", Kept: wire.KeptByService}},
+		refused:  "Not allowed: TELE_READ_ONLY refuses host restart and uninstall from non-window clients.",
+	}
+	srv := hosting.Serve(context.Background(), r.Listener, host, hosting.NewClients())
+	t.Cleanup(func() {
+		srv.Stop(time.Second, core.StopQuit)
+		r.Close()
+	})
+	m := &managed{}
+	var out bytes.Buffer
+
+	err = installing(m, "", &out).uninstall(ctx, options{cfgPath: cfg})
+
+	var ec *exitCode
+	if !errors.As(err, &ec) || ec.code != commandsOffCode {
+		t.Fatalf("got err=%v, want exitCode %d", err, commandsOffCode)
+	}
+	if len(m.uninstalled) != 0 {
+		t.Fatalf("removed unit despite host TELE_READ_ONLY refusal: %v", m.uninstalled)
+	}
+}
+
+func TestUninstall_ProceedsWhenNonServiceHostRefuses(t *testing.T) {
+	stateDir, cfg := isolatedHome(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	r, err := hosting.Reach(ctx, "tele", stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := refusingHost{
+		heldHost: heldHost{wire.Hello{Protocol: wire.ProtocolVersion, Binary: "dev", Kept: wire.KeptByWindow}},
+		refused:  "this tele is not a service",
+	}
+	srv := hosting.Serve(context.Background(), r.Listener, host, hosting.NewClients())
+	t.Cleanup(func() {
+		srv.Stop(time.Second, core.StopQuit)
+		r.Close()
+	})
+	m := &managed{}
+	var out bytes.Buffer
+
+	if err := installing(m, "", &out).uninstall(ctx, options{cfgPath: cfg}); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if len(m.uninstalled) != 1 {
+		t.Fatalf("expected service unit to be uninstalled when non-service window holds stateDir, got %v", m.uninstalled)
+	}
+}
+
 // With nothing installed, uninstalling says so and succeeds.
 func TestUninstall_NothingInstalled(t *testing.T) {
 	_, cfg := isolatedHome(t)

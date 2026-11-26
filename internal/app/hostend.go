@@ -125,7 +125,7 @@ func (e *HostEnd) Status() wire.HostStatus {
 	e.mu.Lock()
 	windows, commands, account := e.windows, e.commands, e.account
 	e.mu.Unlock()
-	s := wire.HostStatus{Since: e.since, AccountCommands: e.AccountCommands()}
+	s := wire.HostStatus{Since: e.since, AccountCommands: e.AccountCommands(), ReadOnly: readonly.Active()}
 	if windows != nil {
 		s.Windows = windows()
 	}

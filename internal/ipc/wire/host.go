@@ -59,6 +59,8 @@ type HostStatus struct {
 	// AccountCommands is cli.account_commands: what the host lets commands do
 	// with the account (#181).
 	AccountCommands CommandAccess `json:"account_commands"`
+	// ReadOnly reports that the host itself enforces TELE_READ_ONLY.
+	ReadOnly bool `json:"read_only,omitempty"`
 	// Account is how the account is doing, nil between one account and the
 	// next.
 	Account *AccountStatus `json:"account,omitempty"`
