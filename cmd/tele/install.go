@@ -247,8 +247,8 @@ func (in installer) uninstall(ctx context.Context, o options) error {
 }
 
 // whoHoldsStatus asks the tele holding stateDir who it is and how it is doing.
-// When status cannot be read (such as a protocol mismatch), it falls back to
-// whoHolds so the caller still sees the holder's identity.
+// When status cannot be read (such as a protocol mismatch), it keeps the
+// holder identity already reported or falls back to whoHolds.
 func whoHoldsStatus(ctx context.Context, stateDir string) (wire.Hello, wire.HostStatus, bool) {
 	statusCtx, cancel := context.WithTimeout(ctx, helloTimeout)
 	defer cancel()
@@ -259,6 +259,9 @@ func whoHoldsStatus(ctx context.Context, stateDir string) (wire.Hello, wire.Host
 	host, status, err := dial.AskStatus(statusCtx, conn, ownHello())
 	if err == nil {
 		return host, status, true
+	}
+	if host.Binary != "" || host.Protocol != 0 {
+		return host, wire.HostStatus{}, true
 	}
 	host, ok = whoHolds(ctx, stateDir)
 	return host, wire.HostStatus{}, ok
@@ -286,11 +289,7 @@ func tellUninstalled(ctx context.Context, stateDir string) error {
 	if !ok {
 		return nil
 	}
-	res, err := dial.AskUninstall(ctx, conn, ownHello())
-	if err != nil {
-		return nil
-	}
-	if strings.Contains(res.Refused, readonly.EnvVar) {
+	if res, err := dial.AskUninstall(ctx, conn, ownHello()); err == nil && strings.Contains(res.Refused, readonly.EnvVar) {
 		return &exitCode{code: commandsOffCode, msg: sanitize.Name(res.Refused)}
 	}
 	return nil
