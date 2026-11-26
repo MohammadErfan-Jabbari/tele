@@ -18,6 +18,7 @@ import (
 	"github.com/sorokin-vladimir/tele/internal/ipc/dial"
 	"github.com/sorokin-vladimir/tele/internal/ipc/wire"
 	"github.com/sorokin-vladimir/tele/internal/readonly"
+	"github.com/sorokin-vladimir/tele/internal/sanitize"
 	"github.com/sorokin-vladimir/tele/internal/service"
 	"github.com/sorokin-vladimir/tele/internal/version"
 )
@@ -147,7 +148,10 @@ func (in installer) install(ctx context.Context, o options, given string) error 
 	if err != nil {
 		return err
 	}
-	holder, held := whoHolds(ctx, cfg.StateDir)
+	holder, status, held := whoHoldsStatus(ctx, cfg.StateDir)
+	if held && status.ReadOnly {
+		return &exitCode{code: commandsOffCode, msg: "Not allowed: the running tele host enforces TELE_READ_ONLY."}
+	}
 	if err := m.Install(u); errors.Is(err, service.ErrStillRunning) {
 		// The new service is written and not started: an install once the
 		// old one has gone starts it (#327).
@@ -227,7 +231,9 @@ func (in installer) uninstall(ctx context.Context, o options) error {
 	if err != nil {
 		return err
 	}
-	tellUninstalled(ctx, cfg.StateDir)
+	if err := tellUninstalled(ctx, cfg.StateDir); err != nil {
+		return err
+	}
 	removed, err := m.Uninstall(u.Name)
 	if err != nil {
 		return fmt.Errorf("uninstalling the service: %w", err)
@@ -238,6 +244,24 @@ func (in installer) uninstall(ctx context.Context, o options) error {
 	}
 	_, _ = fmt.Fprintf(in.out, "Uninstalled the service %s. State and config are left as they were.\n", u.Name)
 	return nil
+}
+
+// whoHoldsStatus asks the tele holding stateDir who it is and how it is doing.
+// When status cannot be read (such as a protocol mismatch), it falls back to
+// whoHolds so the caller still sees the holder's identity.
+func whoHoldsStatus(ctx context.Context, stateDir string) (wire.Hello, wire.HostStatus, bool) {
+	statusCtx, cancel := context.WithTimeout(ctx, helloTimeout)
+	defer cancel()
+	conn, ok := reachHolder(statusCtx, stateDir)
+	if !ok {
+		return wire.Hello{}, wire.HostStatus{}, false
+	}
+	host, status, err := dial.AskStatus(statusCtx, conn, ownHello())
+	if err == nil {
+		return host, status, true
+	}
+	host, ok = whoHolds(ctx, stateDir)
+	return host, wire.HostStatus{}, ok
 }
 
 // whoHolds is what the tele holding stateDir says of itself, if one answers.
@@ -253,15 +277,23 @@ func whoHolds(ctx context.Context, stateDir string) (wire.Hello, bool) {
 }
 
 // tellUninstalled tells the service holding stateDir, if one does, that it is
-// being uninstalled. Anything else holding it refuses, which changes nothing.
-func tellUninstalled(ctx context.Context, stateDir string) {
+// being uninstalled. Anything else holding it refuses, which changes nothing,
+// except when the running host refuses because TELE_READ_ONLY is active.
+func tellUninstalled(ctx context.Context, stateDir string) error {
 	ctx, cancel := context.WithTimeout(ctx, helloTimeout)
 	defer cancel()
 	conn, ok := reachHolder(ctx, stateDir)
 	if !ok {
-		return
+		return nil
 	}
-	_, _ = dial.AskUninstall(ctx, conn, ownHello())
+	res, err := dial.AskUninstall(ctx, conn, ownHello())
+	if err != nil {
+		return nil
+	}
+	if strings.Contains(res.Refused, readonly.EnvVar) {
+		return &exitCode{code: commandsOffCode, msg: sanitize.Name(res.Refused)}
+	}
+	return nil
 }
 
 // reachHolder connects to the tele holding stateDir, if one answers. It never
